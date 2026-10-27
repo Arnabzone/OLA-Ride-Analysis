@@ -1,0 +1,320 @@
+OLA RIDE ANALYSIS — SQL QUERY COLLECTION
+=========================================
+Database: PostgreSQL
+Database name: ola_ride_analysis
+Table: public.ola_bookings
+Dataset: 100,000 synthetic booking records
+Reporting period: October 2026
+
+IMPORTANT
+---------
+These queries are for the existing PostgreSQL database and do not create,
+delete, or modify tables. Run them in pgAdmin Query Tool.
+
+Column names "Date" and "Time" are quoted because they contain capital letters.
+The status labels used in the project are:
+Successful | Cancelled by Customer | Cancelled by Driver | Incomplete | Expired / Other
+
+
+1. VALIDATE TOTAL ROWS AND UNIQUE BOOKING IDS
+---------------------------------------------
+SELECT
+    COUNT(*) AS total_rows,
+    COUNT(DISTINCT booking_id) AS unique_booking_ids
+FROM public.ola_bookings;
+
+
+2. BOOKING STATUS DISTRIBUTION
+------------------------------
+SELECT
+    booking_status,
+    COUNT(*) AS ride_count,
+    ROUND(100.0 * COUNT(*) / NULLIF(SUM(COUNT(*)) OVER (), 0), 2) AS percentage
+FROM public.ola_bookings
+GROUP BY booking_status
+ORDER BY ride_count DESC;
+
+
+3. SUCCESSFUL BOOKINGS
+----------------------
+SELECT COUNT(*) AS successful_bookings
+FROM public.ola_bookings
+WHERE booking_status = 'Successful';
+
+
+4. AVERAGE SUCCESSFUL RIDE DISTANCE BY VEHICLE TYPE
+---------------------------------------------------
+SELECT
+    vehicle_type,
+    ROUND(AVG(ride_distance)::numeric, 2) AS average_ride_distance_km
+FROM public.ola_bookings
+WHERE booking_status = 'Successful'
+  AND ride_distance IS NOT NULL
+GROUP BY vehicle_type
+ORDER BY average_ride_distance_km DESC;
+
+
+5. CUSTOMER CANCELLATION COUNT
+------------------------------
+SELECT COUNT(*) AS customer_cancelled_rides
+FROM public.ola_bookings
+WHERE booking_status = 'Cancelled by Customer';
+
+
+6. TOP 5 CUSTOMERS BY SUCCESSFUL RIDE COUNT
+-------------------------------------------
+SELECT
+    customer_id,
+    COUNT(*) AS successful_ride_count
+FROM public.ola_bookings
+WHERE booking_status = 'Successful'
+GROUP BY customer_id
+ORDER BY successful_ride_count DESC, customer_id
+LIMIT 5;
+
+
+7. DRIVER CANCELLATION REASONS
+------------------------------
+SELECT
+    reason_for_cancelling_by_driver AS cancellation_reason,
+    COUNT(*) AS cancellation_count
+FROM public.ola_bookings
+WHERE booking_status = 'Cancelled by Driver'
+  AND reason_for_cancelling_by_driver IS NOT NULL
+GROUP BY reason_for_cancelling_by_driver
+ORDER BY cancellation_count DESC;
+
+
+8. PRIME SEDAN DRIVER RATING — MAXIMUM AND MINIMUM
+--------------------------------------------------
+SELECT
+    MAX(driver_ratings) AS maximum_driver_rating,
+    MIN(driver_ratings) AS minimum_driver_rating
+FROM public.ola_bookings
+WHERE vehicle_type = 'Prime Sedan'
+  AND booking_status = 'Successful'
+  AND driver_ratings IS NOT NULL;
+
+
+9. UPI BOOKING COUNT
+--------------------
+SELECT COUNT(*) AS upi_booking_count
+FROM public.ola_bookings
+WHERE payment_method = 'UPI';
+
+
+10. AVERAGE CUSTOMER RATING BY VEHICLE TYPE
+-------------------------------------------
+SELECT
+    vehicle_type,
+    ROUND(AVG(customer_rating)::numeric, 2) AS average_customer_rating
+FROM public.ola_bookings
+WHERE booking_status = 'Successful'
+  AND customer_rating IS NOT NULL
+GROUP BY vehicle_type
+ORDER BY average_customer_rating DESC;
+
+
+11. SUCCESSFUL BOOKING VALUE
+----------------------------
+SELECT
+    ROUND(SUM(booking_value)::numeric, 2) AS successful_booking_value_inr
+FROM public.ola_bookings
+WHERE booking_status = 'Successful';
+
+
+12. INCOMPLETE RIDE DETAILS
+---------------------------
+SELECT
+    booking_id,
+    "Date",
+    "Time",
+    vehicle_type,
+    pickup_location,
+    drop_location,
+    incomplete_rides_reason
+FROM public.ola_bookings
+WHERE booking_status = 'Incomplete'
+ORDER BY "Date", "Time";
+
+
+13. INCOMPLETE RIDES BY REASON
+------------------------------
+SELECT
+    incomplete_rides_reason,
+    COUNT(*) AS incomplete_ride_count
+FROM public.ola_bookings
+WHERE booking_status = 'Incomplete'
+GROUP BY incomplete_rides_reason
+ORDER BY incomplete_ride_count DESC;
+
+
+14. COMBINED BOOKING KPI VALIDATION
+-----------------------------------
+SELECT
+    COUNT(*) AS total_rows,
+    COUNT(DISTINCT booking_id) AS unique_booking_ids,
+    COUNT(*) FILTER (WHERE booking_status = 'Successful') AS successful_bookings,
+    COUNT(*) FILTER (WHERE booking_status = 'Cancelled by Customer') AS customer_cancelled,
+    COUNT(*) FILTER (WHERE booking_status = 'Cancelled by Driver') AS driver_cancelled,
+    COUNT(*) FILTER (WHERE booking_status = 'Incomplete') AS incomplete_rides,
+    COUNT(*) FILTER (WHERE booking_status = 'Expired / Other') AS expired_or_other
+FROM public.ola_bookings;
+
+
+15. SUCCESS RATE AND TOTAL CANCELLATION RATE
+--------------------------------------------
+SELECT
+    COUNT(*) AS total_bookings,
+    COUNT(*) FILTER (WHERE booking_status = 'Successful') AS successful_bookings,
+    ROUND(
+        100.0 * COUNT(*) FILTER (WHERE booking_status = 'Successful')
+        / NULLIF(COUNT(*), 0), 2
+    ) AS success_rate_percent,
+    COUNT(*) FILTER (
+        WHERE booking_status IN ('Cancelled by Customer', 'Cancelled by Driver')
+    ) AS total_cancellations,
+    ROUND(
+        100.0 * COUNT(*) FILTER (
+            WHERE booking_status IN ('Cancelled by Customer', 'Cancelled by Driver')
+        ) / NULLIF(COUNT(*), 0), 2
+    ) AS total_cancellation_rate_percent
+FROM public.ola_bookings;
+
+
+16. BOOKING VALUE BY PAYMENT METHOD — SUCCESSFUL RIDES
+------------------------------------------------------
+SELECT
+    payment_method,
+    COUNT(*) AS successful_bookings,
+    ROUND(SUM(booking_value)::numeric, 2) AS successful_booking_value_inr,
+    ROUND(
+        100.0 * SUM(booking_value)
+        / NULLIF(SUM(SUM(booking_value)) OVER (), 0), 2
+    ) AS percentage_of_successful_booking_value
+FROM public.ola_bookings
+WHERE booking_status = 'Successful'
+GROUP BY payment_method
+ORDER BY successful_booking_value_inr DESC;
+
+
+17. SUCCESSFUL BOOKING VALUE BY VEHICLE TYPE
+--------------------------------------------
+SELECT
+    vehicle_type,
+    COUNT(*) AS successful_bookings,
+    ROUND(SUM(booking_value)::numeric, 2) AS successful_booking_value_inr
+FROM public.ola_bookings
+WHERE booking_status = 'Successful'
+GROUP BY vehicle_type
+ORDER BY successful_booking_value_inr DESC;
+
+
+18. DAILY BOOKING TREND
+-----------------------
+SELECT
+    "Date" AS booking_date,
+    COUNT(*) AS total_bookings,
+    COUNT(*) FILTER (WHERE booking_status = 'Successful') AS successful_bookings
+FROM public.ola_bookings
+GROUP BY "Date"
+ORDER BY "Date";
+
+
+19. CUSTOMER CANCELLATION REASONS
+---------------------------------
+SELECT
+    reason_for_cancelling_by_customer AS cancellation_reason,
+    COUNT(*) AS cancellation_count
+FROM public.ola_bookings
+WHERE booking_status = 'Cancelled by Customer'
+  AND reason_for_cancelling_by_customer IS NOT NULL
+GROUP BY reason_for_cancelling_by_customer
+ORDER BY cancellation_count DESC;
+
+
+20. AVERAGE DRIVER AND CUSTOMER RATINGS
+---------------------------------------
+SELECT
+    ROUND(AVG(driver_ratings)::numeric, 2) AS average_driver_rating,
+    ROUND(AVG(customer_rating)::numeric, 2) AS average_customer_rating
+FROM public.ola_bookings
+WHERE booking_status = 'Successful';
+
+
+21. TOP 5 CUSTOMERS BY SUCCESSFUL BOOKING VALUE
+-----------------------------------------------
+SELECT
+    customer_id,
+    COUNT(*) AS successful_bookings,
+    ROUND(SUM(booking_value)::numeric, 2) AS successful_booking_value_inr
+FROM public.ola_bookings
+WHERE booking_status = 'Successful'
+GROUP BY customer_id
+ORDER BY successful_booking_value_inr DESC, successful_bookings DESC
+LIMIT 5;
+
+
+22. DAILY SUCCESSFUL BOOKING VALUE
+----------------------------------
+SELECT
+    "Date" AS booking_date,
+    ROUND(SUM(booking_value)::numeric, 2) AS successful_booking_value_inr
+FROM public.ola_bookings
+WHERE booking_status = 'Successful'
+GROUP BY "Date"
+ORDER BY "Date";
+
+
+23. VEHICLE TYPE BOOKING VOLUME
+-------------------------------
+SELECT
+    vehicle_type,
+    COUNT(*) AS total_bookings
+FROM public.ola_bookings
+GROUP BY vehicle_type
+ORDER BY total_bookings DESC;
+
+
+24. RATING COUNTS / FEEDBACK COVERAGE
+-------------------------------------
+SELECT
+    COUNT(*) FILTER (WHERE booking_status = 'Successful') AS successful_bookings,
+    COUNT(*) FILTER (
+        WHERE booking_status = 'Successful' AND driver_ratings IS NOT NULL
+    ) AS rated_successful_rides_driver,
+    COUNT(*) FILTER (
+        WHERE booking_status = 'Successful' AND customer_rating IS NOT NULL
+    ) AS rated_successful_rides_customer,
+    ROUND(
+        100.0 * COUNT(*) FILTER (
+            WHERE booking_status = 'Successful' AND driver_ratings IS NOT NULL
+        ) / NULLIF(COUNT(*) FILTER (WHERE booking_status = 'Successful'), 0), 2
+    ) AS driver_rating_feedback_percent,
+    ROUND(
+        100.0 * COUNT(*) FILTER (
+            WHERE booking_status = 'Successful' AND customer_rating IS NOT NULL
+        ) / NULLIF(COUNT(*) FILTER (WHERE booking_status = 'Successful'), 0), 2
+    ) AS customer_rating_feedback_percent
+FROM public.ola_bookings;
+
+
+25. DATA QUALITY CHECK — MISSING VALUES
+---------------------------------------
+SELECT
+    COUNT(*) FILTER (WHERE booking_id IS NULL) AS missing_booking_ids,
+    COUNT(*) FILTER (WHERE booking_status IS NULL) AS missing_booking_statuses,
+    COUNT(*) FILTER (WHERE "Date" IS NULL) AS missing_dates,
+    COUNT(*) FILTER (WHERE vehicle_type IS NULL) AS missing_vehicle_types
+FROM public.ola_bookings;
+
+
+PORTFOLIO NOTES
+---------------
+- The dataset is synthetic and covers October 2026.
+- Successful Booking Value is the sum of booking_value for Successful rides.
+  It is a booking-value metric/proxy, not verified company revenue.
+- Total cancellation rate = (Cancelled by Customer + Cancelled by Driver)
+  / all bookings.
+- UPI booking count across all statuses differs from successful UPI bookings.
+- These queries are PostgreSQL-compatible and read-only.
